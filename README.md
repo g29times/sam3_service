@@ -49,4 +49,18 @@ pip install -r sam3_service/requirements-service.txt
 
 # HuggingFace 认证
 huggingface-cli login
+
+# 启动服务（Real 模式，使用真实 SAM3 模型）
+SAM3_MODE=real uvicorn sam3_service.app.main:app --host 0.0.0.0 --port 8000
+
+# 或者先导出环境变量再启动
+export SAM3_MODE=real
+uvicorn sam3_service.app.main:app --host 0.0.0.0 --port 8000
 ```
+
+### 模式说明
+
+| 环境变量 | 值 | 说明 |
+|---------|-----|------|
+| `SAM3_MODE` | `mock`（默认） | 不加载真实模型，返回假的分割结果，用于前端开发调试 |
+| `SAM3_MODE` | `real` | 加载真实 SAM3 模型，首次启动会从 HuggingFace 下载权重 |

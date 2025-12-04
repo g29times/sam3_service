@@ -1,11 +1,15 @@
 """
 SAM3 服务配置
 """
+import os
 from pathlib import Path
 
+# === 运行模式 ===
+# 通过环境变量控制：SAM3_MODE=mock（默认）或 SAM3_MODE=real
+SAM3_MODE = os.getenv("SAM3_MODE", "mock").lower()  # "mock" or "real"
+
 # === 路径配置 ===
-PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent  # SAM3/
-SAM3_REPO_DIR = PROJECT_ROOT / "sam3"  # 官方仓库目录
+PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent  # sam3_service 的上级
 MODEL_DIR = PROJECT_ROOT / "models" / "sam3"
 STATIC_DIR = Path(__file__).resolve().parent.parent.parent / "static"
 
@@ -18,11 +22,13 @@ SAM3_HF_REPO = "facebook/sam3"  # HuggingFace 仓库名
 # === 设备配置 ===
 def get_device() -> str:
     """延迟检测设备，避免 Mock 模式必须安装 torch"""
+    if SAM3_MODE == "mock":
+        return "cpu"
     try:
         import torch
         return "cuda:0" if torch.cuda.is_available() else "cpu"
     except ImportError:
-        return "cpu"  # Mock 模式，无 torch
+        return "cpu"
 
 DEVICE = get_device()
 

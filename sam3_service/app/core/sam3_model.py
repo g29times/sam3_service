@@ -1,12 +1,14 @@
 """
 SAM3 模型封装（单例）
+支持 mock 和 real 两种模式，通过环境变量 SAM3_MODE 控制
 """
 from dataclasses import dataclass
 from typing import List, Optional
 
 import numpy as np
+from PIL import Image
 
-from .config import DEVICE, MODEL_DIR, SAM3_HF_REPO, SAM3_REPO_DIR
+from .config import DEVICE, SAM3_HF_REPO, SAM3_MODE
 
 
 @dataclass
@@ -38,25 +40,37 @@ class SAM3Model:
         self.processor = None
         self.device = DEVICE
         self.hf_repo = SAM3_HF_REPO
+        self.mode = SAM3_MODE
         self._loaded = False
     
     def load(self) -> bool:
-        """
-        加载模型。
-        TODO: 对接官方 SAM3 推理接口
-        """
-        # TODO: 实现真正的模型加载
-        # SAM3 官方用法：
-        # import sys
-        # sys.path.insert(0, str(SAM3_REPO_DIR))
-        # from sam3.model_builder import build_sam3_image_model
-        # from sam3.model.sam3_image_processor import Sam3Processor
-        # self.model = build_sam3_image_model()  # 会自动从 HuggingFace 下载
-        # self.processor = Sam3Processor(self.model)
-        
+        """加载模型"""
+        if self.mode == "real":
+            return self._load_real()
+        else:
+            return self._load_mock()
+    
+    def _load_mock(self) -> bool:
+        """Mock 模式：不加载真实模型"""
         print(f"[SAM3Model] Mock load: hf_repo={self.hf_repo}, device={self.device}")
         self._loaded = True
         return True
+    
+    def _load_real(self) -> bool:
+        """Real 模式：加载真实 SAM3 模型"""
+        try:
+            from sam3.model_builder import build_sam3_image_model
+            from sam3.model.sam3_image_processor import Sam3Processor
+            
+            print(f"[SAM3Model] Loading real model from {self.hf_repo}...")
+            self.model = build_sam3_image_model()
+            self.processor = Sam3Processor(self.model)
+            print(f"[SAM3Model] Model loaded successfully, device={self.device}")
+            self._loaded = True
+            return True
+        except Exception as e:
+            print(f"[SAM3Model] Failed to load model: {e}")
+            raise
     
     @property
     def is_loaded(self) -> bool:
@@ -67,35 +81,30 @@ class SAM3Model:
         image: np.ndarray,
         min_area_ratio: float = 0.01,
         max_masks: int = 50,
+        text_prompt: str = "all objects",
     ) -> List[MaskResult]:
         """
-        自动分割（无 prompt）。
+        自动分割。
         
-        TODO: 对接官方 SAM3 automatic mask generator
+        在 real 模式下使用 SAM3 的文本 prompt 能力，默认 prompt 为 "all objects"。
         """
         if not self._loaded:
             raise RuntimeError("Model not loaded. Call load() first.")
         
+        if self.mode == "real":
+            return self._segment_real(image, text_prompt, min_area_ratio, max_masks)
+        else:
+            return self._segment_mock(image, min_area_ratio, max_masks)
+    
+    def _segment_mock(
+        self,
+        image: np.ndarray,
+        min_area_ratio: float,
+        max_masks: int,
+    ) -> List[MaskResult]:
+        """Mock 分割：返回一个假的中心区域 mask"""
         h, w = image.shape[:2]
-        total_area = h * w
-        min_area = int(total_area * min_area_ratio)
         
-        # TODO: 替换为真实推理
-        # masks = self.predictor.generate(image)
-        # results = []
-        # for i, m in enumerate(masks):
-        #     if m["area"] < min_area:
-        #         continue
-        #     results.append(MaskResult(
-        #         mask_id=i,
-        #         mask=m["segmentation"],
-        #         bbox=m["bbox"],
-        #         area=m["area"],
-        #         score=m.get("predicted_iou", 1.0),
-        #     ))
-        # return results[:max_masks]
-        
-        # Mock: 返回一个假的中心区域 mask
         mock_mask = np.zeros((h, w), dtype=bool)
         cx, cy = w // 2, h // 2
         r = min(h, w) // 4
@@ -113,6 +122,64 @@ class SAM3Model:
             )
         ]
     
+    def _segment_real(
+        self,
+        image: np.ndarray,
+        text_prompt: str,
+        min_area_ratio: float,
+        max_masks: int,
+    ) -> List[MaskResult]:
+        """真实 SAM3 分割"""
+        h, w = image.shape[:2]
+        total_area = h * w
+        min_area = int(total_area * min_area_ratio)
+        
+        # 转换为 PIL Image
+        pil_image = Image.fromarray(image)
+        
+        # 设置图像并执行分割
+        inference_state = self.processor.set_image(pil_image)
+        output = self.processor.set_text_prompt(state=inference_state, prompt=text_prompt)
+        
+        masks = output["masks"]  # List of mask arrays
+        boxes = output["boxes"]  # List of bounding boxes
+        scores = output["scores"]  # List of confidence scores
+        
+        results = []
+        for i, (mask, box, score) in enumerate(zip(masks, boxes, scores)):
+            # mask 可能是 tensor，转为 numpy
+            if hasattr(mask, "cpu"):
+                mask = mask.cpu().numpy()
+            mask = mask.astype(bool)
+            
+            # 如果 mask 是 3D (1, H, W)，squeeze 掉
+            if mask.ndim == 3:
+                mask = mask.squeeze(0)
+            
+            area = int(mask.sum())
+            if area < min_area:
+                continue
+            
+            # box 格式：[x1, y1, x2, y2]
+            if hasattr(box, "cpu"):
+                box = box.cpu().numpy()
+            bbox = tuple(int(v) for v in box[:4])
+            
+            if hasattr(score, "item"):
+                score = score.item()
+            
+            results.append(MaskResult(
+                mask_id=i,
+                mask=mask,
+                bbox=bbox,
+                area=area,
+                score=float(score),
+            ))
+        
+        # 按 score 排序，取 top max_masks
+        results.sort(key=lambda x: x.score, reverse=True)
+        return results[:max_masks]
+    
     def segment_with_prompts(
         self,
         image: np.ndarray,
@@ -120,15 +187,14 @@ class SAM3Model:
         boxes: Optional[List[dict]] = None,
     ) -> List[MaskResult]:
         """
-        基于 prompt 的分割。
+        基于 prompt 的分割（点/框）。
         
-        TODO: 对接官方 SAM3 predictor
+        TODO: 后续实现
         """
         if not self._loaded:
             raise RuntimeError("Model not loaded. Call load() first.")
         
-        # TODO: 实现真正的 prompt 分割
-        # 目前返回空列表
+        # 目前返回空列表，后续可扩展
         return []
 
 
