@@ -31,6 +31,7 @@ async def privacy_filter(
     blur_type: BlurType = Form(default="gaussian"),
     blur_strength: int = Form(default=DEFAULT_BLUR_STRENGTH),
     min_area_ratio: float = Form(default=AUTO_MASK_MIN_AREA_RATIO),
+    text_prompt: str = Form(default="all objects"),
 ):
     """
     隐私过滤接口
@@ -51,6 +52,7 @@ async def privacy_filter(
         blur_type=blur_type,
         blur_strength=blur_strength,
         min_area_ratio=min_area_ratio,
+        text_prompt=text_prompt,
     )
     
     # 编码结果图像

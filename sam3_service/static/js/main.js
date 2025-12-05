@@ -6,10 +6,12 @@ const API_BASE = '';  // 同源，无需前缀
 
 // DOM 元素
 const imageInput = document.getElementById('image-input');
+const textPromptInput = document.getElementById('text-prompt');
 const blurType = document.getElementById('blur-type');
 const blurStrength = document.getElementById('blur-strength');
 const strengthValue = document.getElementById('strength-value');
-const submitBtn = document.getElementById('submit-btn');
+const previewBtn = document.getElementById('preview-btn');
+const applyBtn = document.getElementById('apply-btn');
 const statusDiv = document.getElementById('status');
 
 const originalPlaceholder = document.getElementById('original-placeholder');
@@ -19,6 +21,7 @@ const resultPreview = document.getElementById('result-preview');
 const regionsInfo = document.getElementById('regions-info');
 
 let selectedFile = null;
+let lastPreviewRegions = 0;
 
 // 更新强度显示
 blurStrength.addEventListener('input', () => {
@@ -30,14 +33,16 @@ imageInput.addEventListener('change', (e) => {
     const file = e.target.files[0];
     if (!file) {
         selectedFile = null;
-        submitBtn.disabled = true;
+        previewBtn.disabled = true;
+        applyBtn.disabled = true;
         originalPreview.style.display = 'none';
         originalPlaceholder.style.display = 'flex';
         return;
     }
     
     selectedFile = file;
-    submitBtn.disabled = false;
+    previewBtn.disabled = false;
+    applyBtn.disabled = true;
     
     // 预览原图
     const reader = new FileReader();
@@ -52,15 +57,64 @@ imageInput.addEventListener('change', (e) => {
     resultPreview.style.display = 'none';
     resultPlaceholder.style.display = 'flex';
     regionsInfo.textContent = '';
+    lastPreviewRegions = 0;
 });
 
-// 提交处理
-submitBtn.addEventListener('click', async () => {
+// 预览分割
+previewBtn.addEventListener('click', async () => {
     if (!selectedFile) return;
     
     // 显示加载状态
-    setStatus('loading', '处理中，请稍候...');
-    submitBtn.disabled = true;
+    setStatus('loading', '正在根据文本提示词进行分割预览...');
+    previewBtn.disabled = true;
+    applyBtn.disabled = true;
+    
+    try {
+        const formData = new FormData();
+        formData.append('image', selectedFile);
+        formData.append('text_prompt', textPromptInput.value || 'all objects');
+        
+        const response = await fetch(`${API_BASE}/v1/segment/text_preview`, {
+            method: 'POST',
+            body: formData,
+        });
+        
+        if (!response.ok) {
+            const errText = await response.text();
+            throw new Error(`预览请求失败: ${response.status} - ${errText}`);
+        }
+        
+        const data = await response.json();
+        
+        // 显示预览结果（叠加 bbox）
+        resultPreview.src = data.preview_image_base64;
+        resultPreview.style.display = 'block';
+        resultPlaceholder.style.display = 'none';
+        
+        // 显示区域信息
+        const regionCount = data.applied_regions.length;
+        lastPreviewRegions = regionCount;
+        regionsInfo.textContent = `预览选中 ${regionCount} 个区域`;
+        
+        setStatus('success', '分割预览完成，请确认后点击“应用模糊”。');
+        
+        // 有区域时才允许应用模糊
+        applyBtn.disabled = regionCount === 0;
+    } catch (err) {
+        console.error(err);
+        setStatus('error', `错误: ${err.message}`);
+    } finally {
+        previewBtn.disabled = !selectedFile;
+    }
+});
+
+// 应用模糊
+applyBtn.addEventListener('click', async () => {
+    if (!selectedFile) return;
+    
+    setStatus('loading', '正在应用模糊，请稍候...');
+    previewBtn.disabled = true;
+    applyBtn.disabled = true;
     
     try {
         const formData = new FormData();
@@ -68,6 +122,7 @@ submitBtn.addEventListener('click', async () => {
         formData.append('mode', 'auto');
         formData.append('blur_type', blurType.value);
         formData.append('blur_strength', blurStrength.value);
+        formData.append('text_prompt', textPromptInput.value || 'all objects');
         
         const response = await fetch(`${API_BASE}/v1/privacy/filter`, {
             method: 'POST',
@@ -81,21 +136,22 @@ submitBtn.addEventListener('click', async () => {
         
         const data = await response.json();
         
-        // 显示结果
+        // 显示最终模糊结果
         resultPreview.src = data.filtered_image_base64;
         resultPreview.style.display = 'block';
         resultPlaceholder.style.display = 'none';
         
         // 显示区域信息
         const regionCount = data.applied_regions.length;
-        regionsInfo.textContent = `已处理 ${regionCount} 个区域`;
+        regionsInfo.textContent = `已对 ${regionCount} 个区域应用模糊`;
         
         setStatus('success', '处理完成！');
     } catch (err) {
         console.error(err);
         setStatus('error', `错误: ${err.message}`);
     } finally {
-        submitBtn.disabled = false;
+        previewBtn.disabled = !selectedFile;
+        applyBtn.disabled = lastPreviewRegions === 0;
     }
 });
 

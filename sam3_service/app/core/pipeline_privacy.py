@@ -85,6 +85,7 @@ class PrivacyPipeline:
         blur_type: BlurType = "gaussian",
         blur_strength: int = DEFAULT_BLUR_STRENGTH,
         min_area_ratio: float = AUTO_MASK_MIN_AREA_RATIO,
+        text_prompt: str = "all objects",
     ) -> PrivacyFilterResult:
         """
         自动模式隐私过滤：
@@ -92,10 +93,11 @@ class PrivacyPipeline:
         2. 筛选满足条件的 mask
         3. 对每个 mask 应用模糊/遮挡
         """
-        # 获取自动分割结果
+        # 获取自动分割结果（支持文本提示词）
         masks: List[MaskResult] = sam3_model.segment_auto(
             image,
             min_area_ratio=min_area_ratio,
+            text_prompt=text_prompt,
         )
         
         # 应用模糊

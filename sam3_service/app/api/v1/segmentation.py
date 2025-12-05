@@ -5,9 +5,11 @@ from typing import List, Optional
 
 from fastapi import APIRouter, File, UploadFile, Form
 from pydantic import BaseModel
+from PIL import Image, ImageDraw
+import numpy as np
 
 from ...core.config import AUTO_MASK_MIN_AREA_RATIO, AUTO_MASK_MAX_COUNT
-from ...core.image_io import decode_image_from_bytes
+from ...core.image_io import decode_image_from_bytes, encode_image_to_base64, resize_if_needed
 from ...core.sam3_model import sam3_model
 
 router = APIRouter(prefix="/segment", tags=["segmentation"])
@@ -28,6 +30,11 @@ class SegmentAutoResponse(BaseModel):
 class SegmentPromptResponse(BaseModel):
     masks: List[MaskInfo]
     image_size: List[int]
+
+
+class TextPreviewResponse(BaseModel):
+    preview_image_base64: str
+    applied_regions: List[MaskInfo]
 
 
 @router.post("/auto", response_model=SegmentAutoResponse)
@@ -63,6 +70,51 @@ async def segment_auto(
     ]
     
     return SegmentAutoResponse(masks=masks, image_size=[h, w])
+
+
+@router.post("/text_preview", response_model=TextPreviewResponse)
+async def text_preview(
+    image: UploadFile = File(...),
+    text_prompt: str = Form(default="all objects"),
+    max_masks: int = Form(default=AUTO_MASK_MAX_COUNT),
+    min_area_ratio: float = Form(default=AUTO_MASK_MIN_AREA_RATIO),
+):
+    """基于文本提示词的分割预览：返回叠加 bbox 的预览图，不做模糊"""
+    data = await image.read()
+    img_arr = decode_image_from_bytes(data)
+    img_arr, scale = resize_if_needed(img_arr)
+    h, w = img_arr.shape[:2]
+
+    results = sam3_model.segment_auto(
+        img_arr,
+        min_area_ratio=min_area_ratio,
+        max_masks=max_masks,
+        text_prompt=text_prompt,
+    )
+
+    # 叠加 bbox 轮廓
+    pil_img = Image.fromarray(img_arr)
+    draw = ImageDraw.Draw(pil_img)
+    for r in results:
+        x1, y1, x2, y2 = r.bbox
+        draw.rectangle([x1, y1, x2, y2], outline=(255, 0, 0), width=3)
+
+    preview_b64 = encode_image_to_base64(np.array(pil_img))
+
+    regions = [
+        MaskInfo(
+            mask_id=r.mask_id,
+            bbox=list(r.bbox),
+            area=r.area,
+            score=r.score,
+        )
+        for r in results
+    ]
+
+    return TextPreviewResponse(
+        preview_image_base64=preview_b64,
+        applied_regions=regions,
+    )
 
 
 @router.post("/prompt", response_model=SegmentPromptResponse)
