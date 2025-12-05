@@ -42,7 +42,7 @@ imageInput.addEventListener('change', (e) => {
     
     selectedFile = file;
     previewBtn.disabled = false;
-    applyBtn.disabled = true;
+    applyBtn.disabled = false;  // 允许直接应用模糊（mock 模式）
     
     // 预览原图
     const reader = new FileReader();
@@ -102,9 +102,15 @@ previewBtn.addEventListener('click', async () => {
         applyBtn.disabled = regionCount === 0;
     } catch (err) {
         console.error(err);
-        setStatus('error', `错误: ${err.message}`);
+        // 网络错误时提示用户可以直接用"应用模糊"
+        if (err.message.includes('fetch') || err.message.includes('Failed')) {
+            setStatus('error', '无法连接服务器，可直接点击"应用模糊"体验 Mock 效果（中心圆形区域）');
+        } else {
+            setStatus('error', `错误: ${err.message}`);
+        }
     } finally {
         previewBtn.disabled = !selectedFile;
+        applyBtn.disabled = !selectedFile;  // 保持可用
     }
 });
 
@@ -151,7 +157,7 @@ applyBtn.addEventListener('click', async () => {
         setStatus('error', `错误: ${err.message}`);
     } finally {
         previewBtn.disabled = !selectedFile;
-        applyBtn.disabled = lastPreviewRegions === 0;
+        applyBtn.disabled = !selectedFile;  // 保持可用
     }
 });
 

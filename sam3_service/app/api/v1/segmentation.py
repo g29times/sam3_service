@@ -92,12 +92,13 @@ async def text_preview(
         text_prompt=text_prompt,
     )
 
-    # 叠加 bbox 轮廓
+    # 叠加轮廓预览
     pil_img = Image.fromarray(img_arr)
     draw = ImageDraw.Draw(pil_img)
     for r in results:
         x1, y1, x2, y2 = r.bbox
-        draw.rectangle([x1, y1, x2, y2], outline=(255, 0, 0), width=3)
+        # 画椭圆（内切于 bbox），与 mock 的圆形 mask 风格一致
+        draw.ellipse([x1, y1, x2, y2], outline=(255, 0, 0), width=3)
 
     preview_b64 = encode_image_to_base64(np.array(pil_img))
 
