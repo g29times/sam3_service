@@ -6,7 +6,7 @@ const API_BASE = '';  // 同源，无需前缀
 
 // DOM 元素
 const imageInput = document.getElementById('image-input');
-const textPromptInput = document.getElementById('text-prompt');
+const textPromptInput = document.getElementById('text-prompt') || { value: '' };
 const blurType = document.getElementById('blur-type');
 const blurStrength = document.getElementById('blur-strength');
 const strengthValue = document.getElementById('strength-value');
