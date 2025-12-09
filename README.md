@@ -1,5 +1,9 @@
 # SAM3
 
+## 场景参考
+1.[隐私过滤](https://www.datacamp.com/tutorial/sam3-tutorial-segment-everything-3-build-a-privacy-filter)
+2.[材料替换](https://stable-diffusion-art.com/sam3-comfyui-image/#SAM3_Image_segmentation_with_prompt)
+
 ## Windows DEV Mock步骤
 
 ```bash
@@ -52,6 +56,7 @@ huggingface-cli login
 
 # 启动服务（Real 模式，使用真实 SAM3 模型）
 SAM3_MODE=real uvicorn sam3_service.app.main:app --host 0.0.0.0 --port 8000
+SAM3_MODE=real uvicorn sam3_service.app.main:app --reload --host 0.0.0.0 --port 8000
 
 # 或者先导出环境变量再启动
 export SAM3_MODE=real
