@@ -7,6 +7,7 @@ from fastapi import APIRouter, File, UploadFile, Form
 from pydantic import BaseModel
 from PIL import Image, ImageDraw
 import numpy as np
+from scipy import ndimage
 
 from ...core.config import AUTO_MASK_MIN_AREA_RATIO, AUTO_MASK_MAX_COUNT
 from ...core.image_io import decode_image_from_bytes, encode_image_to_base64, resize_if_needed
@@ -92,15 +93,20 @@ async def text_preview(
         text_prompt=text_prompt,
     )
 
-    # 叠加轮廓预览
-    pil_img = Image.fromarray(img_arr)
-    draw = ImageDraw.Draw(pil_img)
+    # 叠加轮廓预览：用真实 mask 提取边缘，画高亮描边
+    preview_arr = img_arr.copy()
+    outline_color = np.array([255, 255, 0], dtype=np.uint8)  # 黄色高亮
+    outline_width = 3  # 描边宽度
+    
     for r in results:
-        x1, y1, x2, y2 = r.bbox
-        # 画椭圆（内切于 bbox），与 mock 的圆形 mask 风格一致
-        draw.ellipse([x1, y1, x2, y2], outline=(255, 0, 0), width=3)
+        mask = r.mask.astype(bool)
+        # 形态学腐蚀，然后异或得到边缘
+        eroded = ndimage.binary_erosion(mask, iterations=outline_width)
+        outline = mask ^ eroded  # XOR 得到边缘像素
+        # 把边缘像素涂成高亮色
+        preview_arr[outline] = outline_color
 
-    preview_b64 = encode_image_to_base64(np.array(pil_img))
+    preview_b64 = encode_image_to_base64(preview_arr)
 
     regions = [
         MaskInfo(
