@@ -7,6 +7,7 @@ const API_BASE = '';  // 同源，无需前缀
 // DOM 元素
 const imageInput = document.getElementById('image-input');
 const textPromptInput = document.getElementById('text-prompt') || { value: '' };
+const previewMode = document.getElementById('preview-mode');
 const blurType = document.getElementById('blur-type');
 const blurStrength = document.getElementById('blur-strength');
 const strengthValue = document.getElementById('strength-value');
@@ -73,6 +74,7 @@ previewBtn.addEventListener('click', async () => {
         const formData = new FormData();
         formData.append('image', selectedFile);
         formData.append('text_prompt', textPromptInput.value || 'all objects');
+        formData.append('preview_mode', previewMode ? previewMode.value : 'heatmap');
         
         const response = await fetch(`${API_BASE}/v1/segment/text_preview`, {
             method: 'POST',
